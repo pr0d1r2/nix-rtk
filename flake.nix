@@ -6,24 +6,23 @@
     extra-trusted-public-keys = [ "pr0d1r2.cachix.org-1:NfWjbhgAj41byXhCKiaE+av3Vnphm1fTezHXEGsiQIM=" ];
   };
 
+  # Consumer-facing flake: every input here lands in every consumer's lock, so
+  # it carries only what the package needs. Dev tooling (lefthook and its
+  # remotes) lives in ./dev, a separate flake consumers never see.
   inputs = {
     nixpkgs-lock.url = "github:pr0d1r2/nixpkgs-lock";
     nixpkgs.follows = "nixpkgs-lock/nixpkgs";
     rtk-src = {
-      url = "github:rtk-ai/rtk/v0.42.0";
+      url = "github:rtk-ai/rtk/v0.51.0";
       flake = false;
-    };
-    nix-lefthook = {
-      url = "github:pr0d1r2/nix-lefthook";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
   outputs =
     {
+      self,
       nixpkgs,
       rtk-src,
-      nix-lefthook,
       ...
     }:
     let
@@ -37,34 +36,18 @@
         f: nixpkgs.lib.genAttrs supportedSystems (system: f nixpkgs.legacyPackages.${system});
     in
     {
-      packages = forAllSystems (pkgs: {
-        default = import ./rtk.nix {
+      packages = forAllSystems (pkgs: rec {
+        rtk = import ./rtk.nix {
           inherit pkgs;
           src = rtk-src;
         };
+        default = rtk;
       });
 
-      devShells = forAllSystems (pkgs: {
-        ci = pkgs.mkShell {
-          inputsFrom = [ nix-lefthook.devShells.${pkgs.stdenv.hostPlatform.system}.ci ];
-          packages = [
-            (import ./rtk.nix {
-              inherit pkgs;
-              src = rtk-src;
-            })
-          ];
-        };
-
-        default = pkgs.mkShell {
-          inputsFrom = [ nix-lefthook.devShells.${pkgs.stdenv.hostPlatform.system}.ci ];
-          packages = [
-            (import ./rtk.nix {
-              inherit pkgs;
-              src = rtk-src;
-            })
-          ];
-          shellHook = builtins.readFile ./dev.sh;
-        };
-      });
+      # Hands out the package built against THIS flake's nixpkgs pin, not the
+      # consumer's, so the store path is the one CI pushed to cachix.
+      overlays.default = _final: prev: {
+        rtk = self.packages.${prev.stdenv.hostPlatform.system}.default;
+      };
     };
 }
