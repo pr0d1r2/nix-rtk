@@ -1,33 +1,184 @@
 ---
 name: CI
 
-on:
+# Release pipeline. A commit reaches consumers only through the `cached`
+# branch, and only after every tier-1 store path is confirmed in cachix:
+#
+#   PR:   build (push to cache) + check + lint + assert-pins
+#   main: build (cache hits)  -> verify-cache -> promote `cached`
+#
+# PR builds push to the cache too (same-repo branches only; forks have no
+# secret), so by the time a PR merges its paths are already uploaded and the
+# main run is cache hits plus promotion.
+
+"on":
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel on main: a cancelled run would skip promotion of that commit.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
+  # Tier-1: built, tested and cached on a native runner per system. No qemu:
+  # emulated Rust test suites are slow enough to time out.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+          - runner: macos-14
+            system: aarch64-darwin
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: pr0d1r2/nix-lefthook-ci-action@fbeb9d9cfe38488df1ccfbe220179aa9390fb074
-        with:
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - uses: actions/checkout@v5
 
-  build-darwin:
-    needs: build-linux
-    runs-on: macos-latest
-    steps:
-      - uses: pr0d1r2/nix-lefthook-ci-action@fbeb9d9cfe38488df1ccfbe220179aa9390fb074
+      - uses: cachix/install-nix-action@v31
         with:
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
 
-  build-linux-arm:
-    needs: build-linux
-    runs-on: ubuntu-latest
-    steps:
-      - uses: pr0d1r2/nix-lefthook-ci-action@fbeb9d9cfe38488df1ccfbe220179aa9390fb074
+      - uses: cachix/cachix-action@v16
         with:
-          extra-platforms: aarch64-linux
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          name: pr0d1r2
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: >-
+            ${{ github.event_name == 'pull_request'
+            && github.event.pull_request.head.repo.full_name != github.repository }}
+          # Upload only what this repo produced, not the nixpkgs closure.
+          pushFilter: '(-source$|nixpkgs\.tar\.gz$)'
+
+      - name: Build rtk
+        run: nix build --print-build-logs .#packages.${{ matrix.system }}.default
+
+      - name: Binary reports the pinned version
+        run: |
+          set -euo pipefail
+          want="$(nix eval --raw .#packages.${{ matrix.system }}.default.version)"
+          got="$(./result/bin/rtk --version)"
+          echo "want=$want got=$got"
+          case "$got" in
+            *"$want"*) ;;
+            *) echo "::error::expected rtk $want, got: $got" >&2; exit 1 ;;
+          esac
+
+  # Tier-2 and eval-only gates. x86_64-darwin must evaluate but is never built:
+  # GitHub's only Intel macOS runner is being retired.
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      # --all-systems: a bare check skips systems the runner cannot build.
+      - name: Flake check, all declared systems
+        run: nix flake check --all-systems --print-build-logs
+
+      - name: Eval x86_64-darwin without building
+        run: nix eval --raw .#packages.x86_64-darwin.default.drvPath
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - uses: cachix/cachix-action@v16
+        with:
+          name: pr0d1r2
+
+      - name: lefthook pre-commit + pre-push
+        run: scripts/lint.sh
+
+      - name: shellcheck and actionlint
+        run: |
+          nix develop ./dev#ci --command sh -c \
+            'shellcheck scripts/*.sh nix/fragments/*.sh dev.sh && actionlint .github/workflows/*.yml'
+
+  # Our nixpkgs must be the exact rev nixpkgs-lock publishes. Drift shows up
+  # only as a silent cache miss for consumers on the fleet pin.
+  assert-pins:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: nixpkgs rev matches nixpkgs-lock
+        run: |
+          set -euo pipefail
+          ours="$(nix flake metadata --json | jq -r '.locks.nodes.nixpkgs.locked.rev')"
+          theirs="$(nix flake metadata --json github:pr0d1r2/nixpkgs-lock \
+            | jq -r '.locks.nodes.nixpkgs.locked.rev')"
+          echo "ours=$ours theirs=$theirs"
+          if [ "$ours" != "$theirs" ]; then
+            echo "::error::nixpkgs rev drift: $ours != $theirs; run nix flake update nixpkgs-lock" >&2
+            exit 1
+          fi
+
+      - name: dev shell carries the published rtk
+        run: scripts/check-dev-lock.sh x86_64-linux
+
+  # cachix pushes from a post-job step and logs failures without failing the
+  # job, so a bad token reads as green over an empty cache. Ask the cache.
+  verify-cache:
+    needs: [build, check, lint]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Every tier-1 path is in the cache
+        run: |
+          scripts/verify-cache.sh . || {
+            echo "::error::rtk missing from pr0d1r2.cachix.org. CACHIX_AUTH_TOKEN must have write access to pr0d1r2." >&2
+            exit 1
+          }
+
+  # The release: fast-forward `cached` to this commit. Not forced, so a
+  # non-fast-forward (history rewrite, out-of-order run) fails loudly instead of
+  # moving consumers backwards.
+  promote:
+    needs: verify-cache
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward cached
+        run: git push origin "${{ github.sha }}:refs/heads/cached"
