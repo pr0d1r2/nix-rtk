@@ -39,7 +39,7 @@
         pkgs:
         let
           package = import ./rtk.nix {
-            inherit pkgs;
+            pkgs = pkgs;
             src = rtk-src;
           };
         in
