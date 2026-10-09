@@ -18,6 +18,8 @@ build=true
 current="$(sed -n 's|^ *url = "github:rtk-ai/rtk/v\(.*\)";$|\1|p' flake.nix)"
 [ -n "$current" ] || { echo "cannot read rtk-src version from flake.nix" >&2; exit 1; }
 
+system="$(nix eval --raw --impure --expr 'builtins.currentSystem')"
+
 latest="$(gh api repos/rtk-ai/rtk/releases/latest --jq .tag_name)"
 latest="${latest#v}"
 [ -n "$latest" ] || { echo "cannot read latest release from upstream" >&2; exit 1; }
@@ -33,7 +35,7 @@ sed "s|github:rtk-ai/rtk/v$current\"|github:rtk-ai/rtk/v$latest\"|" flake.nix >"
 mv "$tmp" flake.nix
 nix flake update rtk-src
 
-got="$(nix eval --raw .#default.version)"
+got="$(nix eval --raw ".#packages.${system}.default.version")"
 [ "$got" = "$latest" ] || { echo "Cargo.toml says $got, tag says $latest" >&2; exit 1; }
 
 if [ "$build" = true ]; then

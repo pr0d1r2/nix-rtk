@@ -36,10 +36,10 @@
     in
     rec {
       packages = forAllSystems (
-        _pkgs:
+        pkgs:
         let
           package = import ./rtk.nix {
-            pkgs = _pkgs;
+            inherit pkgs;
             src = rtk-src;
           };
         in
