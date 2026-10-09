@@ -50,7 +50,7 @@
       );
 
       overlays.default = final: _prev: {
-        rtk = packages.${final.system}.default;
+        inherit (packages.${final.system}) rtk;
       };
 
     };
