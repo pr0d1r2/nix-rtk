@@ -34,7 +34,7 @@
       forAllSystems =
         f: nixpkgs.lib.genAttrs supportedSystems (system: f nixpkgs.legacyPackages.${system});
     in
-    {
+    rec {
       packages = forAllSystems (
         pkgs:
         let
@@ -48,6 +48,10 @@
           default = package;
         }
       );
+
+      overlays.default = final: _prev: {
+        rtk = packages.${final.system}.default;
+      };
 
     };
 }
