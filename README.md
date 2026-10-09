@@ -1,5 +1,9 @@
 # nix-rtk
 
+<!-- hallucinogen:autonomy-disclaimer start -->
+> Read [LLM-DISCLAIMER](docs/LLM-DISCLAIMER.md) first: this repository is tended by an autonomous loop; that file says what it may do here, what it may not, and what to check before trusting this tree.
+<!-- hallucinogen:autonomy-disclaimer end -->
+
 [![CI](https://github.com/pr0d1r2/nix-rtk/actions/workflows/ci.yml/badge.svg)](https://github.com/pr0d1r2/nix-rtk/actions/workflows/ci.yml)
 
 Nix package for [RTK](https://github.com/rtk-ai/rtk) — CLI proxy that reduces LLM token consumption by 60-90%. Pre-built binaries served via [cachix](https://pr0d1r2.cachix.org).
