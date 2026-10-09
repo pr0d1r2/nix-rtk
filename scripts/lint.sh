@@ -6,6 +6,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 export TERM=dumb
+export HOME="${HOME:-${TMPDIR:-/tmp}/nix-rtk-home}"
+export NIX_CONFIG="${NIX_CONFIG:-experimental-features = nix-command flakes}"
+mkdir -p "$HOME"
 nix develop --accept-flake-config ./dev#ci --ignore-environment --keep TERM \
+  --keep HOME \
+  --keep NIX_CONFIG \
   --command bash -c \
   'lefthook install && lefthook run pre-commit --all-files && lefthook run pre-push --all-files'
