@@ -45,6 +45,7 @@
         in
         {
           default = package;
+          rtk = package;
         }
       );
 
