@@ -37,11 +37,11 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
-        rtk = import ./rtk.nix {
+        package = import ./rtk.nix {
           inherit pkgs;
           src = rtk-src;
         };
-        default = rtk;
+        default = package;
       });
 
       # Hands out the package built against THIS flake's nixpkgs pin, not the
