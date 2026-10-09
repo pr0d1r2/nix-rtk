@@ -20,7 +20,6 @@
 
   outputs =
     {
-      self,
       nixpkgs,
       rtk-src,
       ...
@@ -50,10 +49,5 @@
         }
       );
 
-      # Hands out the package built against THIS flake's nixpkgs pin, not the
-      # consumer's, so the store path is the one CI pushed to cachix.
-      overlays.default = _final: prev: {
-        rtk = self.packages.${prev.stdenv.hostPlatform.system}.default;
-      };
     };
 }
