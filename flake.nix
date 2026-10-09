@@ -36,13 +36,18 @@
         f: nixpkgs.lib.genAttrs supportedSystems (system: f nixpkgs.legacyPackages.${system});
     in
     {
-      packages = forAllSystems (pkgs: rec {
-        package = import ./rtk.nix {
-          inherit pkgs;
-          src = rtk-src;
-        };
-        default = package;
-      });
+      packages = forAllSystems (pkgs:
+        let
+          package = import ./rtk.nix {
+            inherit pkgs;
+            src = rtk-src;
+          };
+        in
+        {
+          rtk = package;
+          default = package;
+        }
+      );
 
       # Hands out the package built against THIS flake's nixpkgs pin, not the
       # consumer's, so the store path is the one CI pushed to cachix.
