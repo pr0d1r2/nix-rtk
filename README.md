@@ -63,6 +63,16 @@ Check what consumers get:
 scripts/verify-cache.sh github:pr0d1r2/nix-rtk/cached
 ```
 
+## RTK 1.0 migration notes
+
+The v1.0 line keeps `rtk rewrite`, the hook protocol, `rtk gain`, and the
+existing `config.toml` and `filters.toml` locations used by downstream
+integrations. The upstream breaking changes are that `rtk proxy` is now named
+`rtk bypass` (the old command remains an alias), `--ultra-compact` was removed,
+and `rtk gain` no longer includes oversized outputs in its headline rate. The
+default binary also changed to the Apache-2.0 edition; downstream license
+consumers should review that change.
+
 ## Release flow
 
 There is no scheduled workflow. An external loop drives the daily update:
