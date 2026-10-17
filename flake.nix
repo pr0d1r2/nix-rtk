@@ -13,7 +13,7 @@
     nixpkgs-lock.url = "github:pr0d1r2/nixpkgs-lock";
     nixpkgs.follows = "nixpkgs-lock/nixpkgs";
     rtk-src = {
-      url = "github:rtk-ai/rtk/v0.51.0";
+      url = "github:rtk-ai/rtk/v1.0.1";
       flake = false;
     };
   };
