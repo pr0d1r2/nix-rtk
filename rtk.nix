@@ -24,6 +24,7 @@ pkgs.rustPlatform.buildRustPackage {
   # rtk >= 0.51 tests run its hook scripts (hooks/claude/rtk-rewrite.sh),
   # which need jq; without it the hook prints a warning and no JSON.
   nativeCheckInputs = with pkgs; [
+    curl
     jq
   ];
 
