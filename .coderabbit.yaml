@@ -5,7 +5,7 @@
 # repository has none, and never overwrites one.
 language: en-US
 reviews:
-  profile: chill
+  profile: quiet
   auto_approvals:
     enabled: false
   poem: false
